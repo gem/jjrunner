@@ -2,6 +2,7 @@
 from collections import OrderedDict
 from jenkins import Jenkins
 import os
+import stat
 from os.path import expanduser
 import sys
 from xml.etree import ElementTree
@@ -12,6 +13,7 @@ import re
 import git
 import subprocess
 from subprocess import TimeoutExpired
+import getpass
 from pprint import pprint
 
 # TODO:
@@ -19,12 +21,18 @@ from pprint import pprint
 #    config: DONE - convert to dict
 #            DONE - override with external values
 #            save to file to be loaded by scripts
-#    run scripts 
+#    run scripts
 
 builtin_vars = [
-    "BUILD_NUMBER", "BUILD_ID", "BUILD_URL", "NODE_NAME", "JOB_NAME",
-    "BUILD_TAG", "JENKINS_URL", "EXECUTOR_NUMBER", "JAVA_HOME", "WORKSPACE",
-    "SVN_REVISION", "CVS_BRANCH", "GIT_COMMIT", "GIT_URL", "GIT_BRANCH"]
+    "BRANCH_NAME", "CHANGE_ID", "CHANGE_URL", "CHANGE_TITLE", "CHANGE_AUTHOR",
+    "CHANGE_AUTHOR_DISPLAY_NAME", "CHANGE_AUTHOR_EMAIL", "CHANGE_TARGET",
+    "BUILD_NUMBER", "BUILD_ID", "BUILD_DISPLAY_NAME", "JOB_NAME",
+    "JOB_BASE_NAME", "BUILD_TAG", "EXECUTOR_NUMBER", "NODE_NAME",
+    "NODE_LABELS", "WORKSPACE", "JENKINS_HOME", "JENKINS_URL", "BUILD_URL",
+    "JOB_URL", "GIT_COMMIT", "GIT_PREVIOUS_COMMIT",
+    "GIT_PREVIOUS_SUCCESSFUL_COMMIT", "GIT_BRANCH", "GIT_LOCAL_BRANCH",
+    "GIT_URL", "GIT_COMMITTER_NAME", "GIT_AUTHOR_NAME", "GIT_COMMITTER_EMAIL",
+    "GIT_AUTHOR_EMAIL"]
 
 
 def main():
@@ -36,6 +44,8 @@ def main():
     parser.add_argument('--dryrun', '-d', action='store_true',
                         help=('dryrun with all command and parameters '
                               'saved in /tmp directory'))
+    parser.add_argument('--reason', '-r', help=('override build reason'),
+                        default=None)
     args = parser.parse_args()
 
     jobname = args.jobname
@@ -57,6 +67,15 @@ def main():
 
     # collect params from job config
     params = OrderedDict()
+
+    params['GEM_JENKINS_REASON'] = {
+        'name': 'GEM_JENKINS_REASON',
+        'desc': 'auto-generated'}
+    if args.reason is None:
+        params['GEM_JENKINS_REASON']['defa'] = (
+            'Started by user %s' % getpass.getuser())
+    else:
+        params['GEM_JENKINS_REASON']['defa'] = args.reason
 
     params['JOB_NAME'] = {'name': 'JOB_NAME', 'defa': jobname,
                           'desc': 'auto-generated'}
@@ -86,9 +105,7 @@ def main():
         if builtin_var in os.environ:
             params[builtin_var] = os.environ[builtin_var]
 
-    
-            
-    # integrate params with 
+    # integrate params with
     if args.args:
         override_args = json.loads(args.args)
         if type(override_args) != dict:
@@ -127,50 +144,55 @@ def main():
             defa = value['defa']
 
             f_args.write("# %s\n" % desc)
-            f_args.write("export %s='%s'\n\n" % (name, defa))
+            f_args.write("export %s=\"%s\"\n\n" % (name, defa))
 
     f_main_inode, f_main_name = tempfile.mkstemp(
         prefix="jjrunner_main_", suffix=".sh")
+
     f_main = os.fdopen(f_args_inode, mode="w")
     f_main.close()
 
-    # TODO creare main
-    for command in commands:
-        with open(f_main_name, "w") as f_main:
-            f_com_inode, f_com_name = tempfile.mkstemp(
-                prefix="jjrunner_com_", suffix=".sh")
-            with os.fdopen(f_com_inode, "w") as f_com:
-                f_com.write(command)
+    for idx, command in enumerate(commands):
+        f_com_inode, f_com_name = tempfile.mkstemp(
+            prefix="jjrunner_com_%02d_" % idx, suffix=".sh")
+        f_com = os.fdopen(f_com_inode, "w")
+        f_com.write(command)
+        f_com.close()
+        os.chmod(f_com_name, stat.S_IREAD | stat.S_IEXEC | stat.S_IWUSR)
 
-            f_main.write('#!/bin/bash\n. %s\n%s\n' %
-                         (f_args_name, f_com_name))
-            # import ipdb ; ipdb.set_trace()
-            if args.dryrun is False:
-                proc = subprocess.Popen(f_main_name, shell=True)
-                try:
-                    outs, errs = proc.communicate(timeout=400)
-                except TimeoutExpired:
-                    proc.kill()
-                    outs, errs = proc.communicate()
-                os.unlink(f_com_name)
-                if proc.returncode != 0:
-                    print("#---- command ----:\n%s\n#---- end command ----\n\n"
-                          "Returned with errorcode %d\n" % (
-                              command, proc.returncode))
-                    sys.exit(proc.returncode)
-                else:
-                    print("#---- command ----:\n%s\n#---- end command ----\n\n"
-                          "SUCCESS\n" % command)
-                              
+        f_main = open(f_main_name, "w")
+        f_main.write('#!/bin/bash\n. %s\n%s\n' %
+                     (f_args_name, f_com_name))
+        f_main.close()
+        os.chmod(f_main_name, stat.S_IREAD | stat.S_IEXEC | stat.S_IWUSR)
+
+        # import ipdb ; ipdb.set_trace()
+        if args.dryrun is False:
+            proc = subprocess.Popen(f_main_name)
+            try:
+                outs, errs = proc.communicate(timeout=3600)
+            except TimeoutExpired:
+                proc.kill()
+                outs, errs = proc.communicate()
+            os.unlink(f_com_name)
+            if proc.returncode != 0:
+                print("#---- command ----:\n%s\n#---- end command ----\n\n"
+                      "Returned with errorcode %d\n" % (
+                          command, proc.returncode))
+                print("#---- stdout ----:\n%s\n" % outs)
+                print("#---- stderr ----:\n%s\n" % errs)
+                sys.exit(proc.returncode)
             else:
-                print("Command file:   %s" % f_com_name)
-                
+                print("#---- command ----:\n%s\n#---- end command ----\n\n"
+                      "SUCCESS\n" % command)
+
+        else:
+            print("Command file:   %s" % f_com_name)
+
     if args.dryrun is False:
         os.unlink(f_args_name)
-    # TODO save command
-    # execute command
 
-
+    sys.exit(0)
 
 if __name__ == "__main__":
     main()
