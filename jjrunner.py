@@ -14,7 +14,6 @@ import git
 import subprocess
 from subprocess import TimeoutExpired
 import getpass
-from pprint import pprint
 
 # TODO:
 #    check if builtin_vars are used in config or in command
@@ -166,7 +165,6 @@ def main():
         f_main.close()
         os.chmod(f_main_name, stat.S_IREAD | stat.S_IEXEC | stat.S_IWUSR)
 
-        # import ipdb ; ipdb.set_trace()
         if args.dryrun is False:
             proc = subprocess.Popen(f_main_name)
             try:
