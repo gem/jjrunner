@@ -37,7 +37,7 @@ for job in $JOBS; do
 done
 
 if [ "$failed" = "true" ]; then
-    cat /tmp/jobs_checker$$.ctx | $MAILCLI -s "jobs_checker detects a difference" nastasi@openquake.org
+    cat /tmp/jobs_checker$$.ctx | $MAILCLI -s "jobs_checker detects a difference" $ADMIN_MAIL
     test -t 1 && echo "Check found differences, a mail is sent."
 else
     test -t 1 && echo "Differences not found, exit silently."
