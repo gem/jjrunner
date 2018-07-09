@@ -25,3 +25,13 @@ $ jjrunner.py -a '{"GEM_MASTER_BRANCH": "jjrunner", "GEM_SET_DEBUG": "true", "bu
 
 $ jjrunner.py -a '{"GEM_TEST_FOR_JJRUNNER": "true", "GEM_JENKINS_REASON": "Started by timer", "GEM_LAUNCHPAD_REPO": "test4", "GEM_MASTER_BRANCH": "jjrunner", "GEM_SET_DEBUG": "true", "run_dev_tests": "false", "build_for_ubuntu_trusty": "true" }' master_oq-engine
 ```
+
+#### jobs_checker.sh
+This script allow to check ``zdevel_`` and ``master_`` prefixed Jenkins jobs differences and send email if some pair is different.
+
+##### cron configuration
+
+To automate the checks you can use cron with a command line like this:
+```
+1 * * * * export PATH=<jjrunner path>:$PATH && export ADMIN_MAIL="<admins emails list>" && export JJR_USER=<username> && export JJR_PASS=<password> && jobs_checker.sh
+```

@@ -45,10 +45,14 @@ def main():
                               'saved in /tmp directory'))
     parser.add_argument('--reason', '-r', help=('override build reason'),
                         default=None)
+    parser.add_argument('--dump', '-D', action='store_true',
+                        help='create dump of a CI job')
     args = parser.parse_args()
 
+    if args.dump is True:
+        args.dryrun = True
+
     jobname = args.jobname
-    print("ARGS: jobname: [%s], args [%s]" % (args.jobname, args.args))
 
     src = 'https://ci.openquake.org/'
     jjr_user = os.getenv('JJR_USER', None)
@@ -82,13 +86,14 @@ def main():
                               'desc': 'auto-generated'}
     params['BUILD_NUMBER'] = {'name': 'BUILD_NUMBER', 'defa': 1,
                               'desc': 'auto-generated'}
-    try:
-        g = git.cmd.Git(os.getcwd())
-        params['GIT_BRANCH'] = {'name': 'GIT_BRANCH',
-                                'defa': g.rev_parse('--abbrev-ref', 'HEAD'),
-                                'desc': 'auto-generated'}
-    except:
-        print('WARNING: retrieve git informations failed')
+    if args.dump is False:
+        try:
+            g = git.cmd.Git(os.getcwd())
+            params['GIT_BRANCH'] = {'name': 'GIT_BRANCH',
+                                    'defa': g.rev_parse('--abbrev-ref', 'HEAD'),
+                                    'desc': 'auto-generated'}
+        except:
+            print('WARNING: retrieve git informations failed')
 
     for config in configs:
         name = config.find('name').text
@@ -122,18 +127,29 @@ def main():
     for command_tree in commands_tree:
         commands.append(command_tree.getchildren()[0].text)
 
-    # check for missing built-in variables in the scripts
-    for builtin_var in builtin_vars:
-        if builtin_var in params:
-            continue
-        for command in commands:
-            if re.search("\\b%s\\b" % builtin_var, command):
-                print("WARNING: builtin var %s found in script\n%s" %
-                      (builtin_var, command))
+    if args.dump is False:
+        # check for missing built-in variables in the scripts
+        for builtin_var in builtin_vars:
+            if builtin_var in params:
+                continue
+            for command in commands:
+                if re.search("\\b%s\\b" % builtin_var, command):
+                    print("WARNING: builtin var %s found in script\n%s" %
+                          (builtin_var, command))
 
-    f_args_inode, f_args_name = tempfile.mkstemp(
-        prefix="jjrunner_args_", suffix=".sh")
-    if args.dryrun is True:
+    if args.dump is True:
+        if os.path.isdir(jobname):
+            print("Folder '%s' already exists" % jobname)
+            sys.exit(1)
+        os.mkdir(jobname)
+
+    if args.dump is True:
+        f_args_name = os.path.join(jobname, "args.sh")
+        f_args_inode = os.open(f_args_name, os.O_WRONLY | os.O_CREAT)
+    else:
+        f_args_inode, f_args_name = tempfile.mkstemp(
+            prefix="jjrunner_args_", suffix=".sh")
+    if args.dryrun is True and args.dump is False:
         print("Arguments file: %s" % f_args_name)
 
     with os.fdopen(f_args_inode, mode="w") as f_args:
@@ -150,10 +166,13 @@ def main():
 
     f_main = os.fdopen(f_args_inode, mode="w")
     f_main.close()
-
     for idx, command in enumerate(commands):
-        f_com_inode, f_com_name = tempfile.mkstemp(
-            prefix="jjrunner_com_%02d_" % idx, suffix=".sh")
+        if args.dump is True:
+            f_com_name = os.path.join(jobname, "com_%02d.sh" % idx)
+            f_com_inode = os.open(f_com_name, os.O_WRONLY | os.O_CREAT)
+        else:
+            f_com_inode, f_com_name = tempfile.mkstemp(
+                prefix="jjrunner_com_%02d_" % idx, suffix=".sh")
         f_com = os.fdopen(f_com_inode, "w")
         f_com.write(command)
         f_com.close()
@@ -185,7 +204,8 @@ def main():
                       "SUCCESS\n" % command)
 
         else:
-            print("Command file:   %s" % f_com_name)
+            if args.dump is False:
+                print("Command file:   %s" % f_com_name)
 
     if args.dryrun is False:
         os.unlink(f_args_name)
