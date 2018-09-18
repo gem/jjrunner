@@ -15,6 +15,7 @@ import subprocess
 from subprocess import TimeoutExpired
 import getpass
 
+__version__ = "0.1.1"
 # TODO:
 #    check if builtin_vars are used in config or in command
 #    config: DONE - convert to dict
