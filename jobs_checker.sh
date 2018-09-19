@@ -1,10 +1,21 @@
 #!/bin/bash
-set -e
+set -eE
 # set -x
 MAILCLI=mutt
 
 export PATH=$HOME/git/jjrunner:$PATH
 JOBS="oq-engine oq-libs oq-python oq-platform oq-platform2"
+
+err_report () {
+    l=$1
+    if [ "$jobname" ]; then
+        echo "Error found at line $l for job: $jobname"
+    else
+        echo "Error found at line $l"
+    fi
+}
+
+trap 'err_report $LINENO' ERR
 
 BDIR="$HOME/jobs_checker"
 
@@ -17,11 +28,13 @@ touch /tmp/jobs_checker$$.ctx
 failed=false
 for job in $JOBS; do
     test -t 1 && echo "job $job ..." | tr -d '\n'
+    jobname=""
     for pfx in zdevel master; do
         jobname=${pfx}_${job}
         rm -rf "${jobname}"
         jjrunner.py -D "${jobname}"
     done
+    jobname=""
     echo "=== JOB: $job ===" &>>/tmp/jobs_checker$$.ctx
     echo "--- args ---" &>>/tmp/jobs_checker$$.ctx
     diff  <(sed 's/=.*//g;s/^#.*//g' "zdevel_${job}/args.sh") <( sed 's/=.*//g;s/^#.*//g' "master_${job}/args.sh") &>>/tmp/jobs_checker$$.ctx || failed=true
