@@ -4,7 +4,7 @@ set -eE
 MAILCLI=mutt
 
 export PATH=$HOME/git/jjrunner:$PATH
-JOBS="oq-engine oq-libs oq-python oq-platform oq-platform2"
+JOBS="oq-engine oq-libs oq-python oq-platform oq-platform-standalone oq-platform2 oq-taxonomy"
 
 err_report () {
     l=$1
